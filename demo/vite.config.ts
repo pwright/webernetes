@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+	base: "/webernetes/",
 	plugins: [tailwindcss()],
 	optimizeDeps: {
 		exclude: ["webernetes"],
