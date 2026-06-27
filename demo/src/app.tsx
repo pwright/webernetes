@@ -7,6 +7,9 @@ import { RequestOverlay } from "./components/request-overlay";
 import { ResourcesTabs } from "./components/resources-tabs";
 import { distance, getHeader, healthCheckHeader, idFor, kubeletIdForNodeName } from "./helpers";
 import { useCluster, usePauseClusterWhenPageInactive } from "./hooks";
+import { SkupperPlainPanel } from "./skupper-plain/panel";
+import { setupSkupperPlain } from "./skupper-plain/setup";
+import { isSkupperPlainScenario } from "./skupper-plain/url";
 import { setup } from "./setup";
 
 type PreNetworkEvent = w8s.PreNetworkRequestEvent | w8s.PreNetworkResponseEvent;
@@ -21,9 +24,11 @@ const demoClusterOptions: w8s.ClusterOptions = {
 };
 
 export function App() {
-	const { cluster, reset } = useCluster(setup, demoClusterOptions);
+	const skupperPlain = isSkupperPlainScenario();
+	const setupCluster = skupperPlain ? setupSkupperPlain : setup;
+	const { cluster, reset } = useCluster(setupCluster, demoClusterOptions);
 	usePauseClusterWhenPageInactive(cluster);
-	const [namespace, setNamespace] = useState<string | undefined>("default");
+	const [namespace, setNamespace] = useState<string | undefined>(skupperPlain ? "west" : "default");
 	const [highlightedPodIds, setHighlightedPodIds] = useState<Set<string>>(new Set());
 	const requestLayerRef = useRef<HTMLDivElement>(null);
 
@@ -45,6 +50,7 @@ export function App() {
 				onReset={reset}
 			/>
 			<main className="space-y-6">
+				{skupperPlain ? <SkupperPlainPanel /> : undefined}
 				<div ref={requestLayerRef} className="relative space-y-6">
 					<Cluster cluster={cluster} highlightedPodIds={highlightedPodIds} namespace={namespace} />
 					<RequestOverlay cluster={cluster} containerRef={requestLayerRef} namespace={namespace} />

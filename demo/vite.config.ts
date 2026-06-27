@@ -2,7 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-	base: "/webernetes/",
+	base: "/",
 	plugins: [tailwindcss()],
 	optimizeDeps: {
 		exclude: ["webernetes"],
@@ -17,6 +17,6 @@ export default defineConfig({
 		fs: {
 			allow: [".."],
 		},
-		port: 5174,
+		port: 5173,
 	},
 });

@@ -6,7 +6,7 @@ export default defineConfig({
 		exclude: ["@kubernetes/client-node", "@testcontainers/k3s", "testcontainers"],
 	},
 	test: {
-		include: ["src/**/*.test.ts"],
+		include: ["src/**/*.test.ts", "demo/src/**/*.test.ts"],
 		passWithNoTests: true,
 		testTimeout: 10_000,
 		hookTimeout: 20_000,
