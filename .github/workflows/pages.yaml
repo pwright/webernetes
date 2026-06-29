@@ -33,6 +33,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build demo
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
         run: |
           echo "Building Webernetes demo"
           pnpm --filter @ngrok/webernetes build

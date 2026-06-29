@@ -243,14 +243,14 @@ export class SkupperPlainConnectorImage extends w8s.BaseImage {
 	}
 }
 
-export class SkupperPlainTrafficGeneratorImage extends w8s.BaseImage {
-	static readonly imageName = "demo/skupper-plain-traffic-generator";
+export class SkupperPlainClientImage extends w8s.BaseImage {
+	static readonly imageName = "demo/skupper-plain-client";
 	static readonly imageVersion = "1.0";
 
-	readonly defaultCommand = ["traffic-generator"];
+	readonly defaultCommand = ["client"];
 
 	override async exec(ctx: w8s.ProcessContext, argv: readonly string[]): Promise<number> {
-		if (argv[0] !== "traffic-generator") {
+		if (argv[0] !== "client") {
 			return await super.exec(ctx, argv);
 		}
 
@@ -261,10 +261,10 @@ export class SkupperPlainTrafficGeneratorImage extends w8s.BaseImage {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						"x-demo-source": "traffic-generator",
+						"x-demo-source": "client",
 						"x-routing-key": "backend",
 					},
-					body: JSON.stringify({ source: "traffic-generator" }),
+					body: JSON.stringify({ source: "client" }),
 				})
 				.catch((error) => {
 					if (!ctx.err()) {

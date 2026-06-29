@@ -8,9 +8,11 @@ It uses one simulated cluster and two namespaces:
 - `west`: listening site
 - `east`: connecting site
 
-The frontend runs in `west`.
+The client and frontend run in `west`.
 
 The backend runs in `east`.
+
+The client generates demo traffic by calling `http://frontend/checkout`.
 
 The frontend calls `http://backend/api/hello`.
 
@@ -36,6 +38,7 @@ http://localhost:5173/?scenario=skupper-plain
 ## What this demonstrates
 
 - Local service name usage from the frontend.
+- Client traffic entering the west site.
 - Listener-style local endpoint.
 - Connector-style remote forwarding.
 - Routing-key mental model.

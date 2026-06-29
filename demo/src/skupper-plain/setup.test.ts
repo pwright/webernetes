@@ -13,7 +13,15 @@ type TestDeploymentResource = {
 	kind: "Deployment";
 	metadata?: { name?: string; namespace?: string };
 	spec?: {
-		template?: { spec?: { containers?: Array<{ env?: Array<{ name: string; value?: string }> }> } };
+		template?: {
+			spec?: {
+				containers?: Array<{
+					env?: Array<{ name: string; value?: string }>;
+					image?: string;
+					name?: string;
+				}>;
+			};
+		};
 	};
 };
 
@@ -52,6 +60,15 @@ browser.describe("skupper plain resource builders", () => {
 			TARGET_URL: "http://backend.east.svc.cluster.local",
 		});
 	});
+
+	it("creates a west-side client workload to drive traffic", () => {
+		const container = deploymentResource("west", "client").spec?.template?.spec?.containers?.[0];
+
+		expect(container).toMatchObject({
+			name: "client",
+			image: "demo/skupper-plain-client:1.0",
+		});
+	});
 });
 
 function serviceResource(namespace: string, name: string) {
@@ -66,6 +83,12 @@ function serviceResource(namespace: string, name: string) {
 }
 
 function containerEnv(namespace: string, name: string): Record<string, string> {
+	const container = deploymentResource(namespace, name).spec?.template?.spec?.containers?.[0];
+	expect(container).toBeDefined();
+	return Object.fromEntries((container?.env ?? []).map((item) => [item.name, item.value ?? ""]));
+}
+
+function deploymentResource(namespace: string, name: string): TestDeploymentResource {
 	const deployment = skupperPlainResources().find(
 		(resource) =>
 			resource.kind === "Deployment" &&
@@ -73,7 +96,5 @@ function containerEnv(namespace: string, name: string): Record<string, string> {
 			resource.metadata.name === name,
 	) as TestDeploymentResource | undefined;
 	expect(deployment).toBeDefined();
-	const container = deployment?.spec?.template?.spec?.containers[0];
-	expect(container).toBeDefined();
-	return Object.fromEntries((container?.env ?? []).map((item) => [item.name, item.value ?? ""]));
+	return deployment;
 }

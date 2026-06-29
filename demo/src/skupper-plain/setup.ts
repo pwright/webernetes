@@ -2,10 +2,10 @@ import * as w8s from "webernetes";
 
 import {
 	SkupperPlainBackendImage,
+	SkupperPlainClientImage,
 	SkupperPlainConnectorImage,
 	SkupperPlainFrontendImage,
 	SkupperPlainListenerImage,
-	SkupperPlainTrafficGeneratorImage,
 } from "./images";
 
 export async function setupSkupperPlain(cluster: w8s.Cluster): Promise<void> {
@@ -13,7 +13,7 @@ export async function setupSkupperPlain(cluster: w8s.Cluster): Promise<void> {
 	cluster.registerImage(SkupperPlainBackendImage);
 	cluster.registerImage(SkupperPlainListenerImage);
 	cluster.registerImage(SkupperPlainConnectorImage);
-	cluster.registerImage(SkupperPlainTrafficGeneratorImage);
+	cluster.registerImage(SkupperPlainClientImage);
 
 	await cluster.apply(skupperPlainResources());
 }
@@ -63,12 +63,12 @@ export function skupperPlainResources(): w8s.ClusterApplyResource[] {
 		}),
 		deployment({
 			namespace: "west",
-			name: "traffic-generator",
-			labels: { app: "traffic-generator", site: "west", role: "traffic-generator" },
+			name: "client",
+			labels: { app: "client", site: "west", role: "client" },
 			containers: [
 				{
-					name: "traffic-generator",
-					image: "demo/skupper-plain-traffic-generator:1.0",
+					name: "client",
+					image: "demo/skupper-plain-client:1.0",
 					env: [{ name: "REQUESTS_PER_SECOND", value: "1" }],
 				},
 			],
