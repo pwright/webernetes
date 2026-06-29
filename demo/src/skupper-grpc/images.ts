@@ -23,7 +23,8 @@ function parseJsonBody(body: string): unknown {
 function headerClone(header: w8s.HttpHeader): w8s.HttpHeader {
 	const cloned: w8s.HttpHeader = {};
 	for (const [name, values] of Object.entries(header)) {
-		if (name.toLowerCase() === webernetesRequestIdHeader.toLowerCase()) {
+		const lowerName = name.toLowerCase();
+		if (lowerName === webernetesRequestIdHeader.toLowerCase() || lowerName === "host") {
 			continue;
 		}
 		cloned[name] = [...values];
@@ -175,14 +176,13 @@ export class SkupperGrpcServiceImage extends w8s.BaseImage {
 }
 
 type RouterRoute = {
-	connectorName: string;
-	connectorPort: number;
 	connectorSite: string;
 	host: string;
 	listener: string;
 	listenerSite: string;
 	port: number;
 	routingKey: string;
+	targetURL: string;
 };
 
 export class SkupperGrpcRouterImage extends w8s.BaseImage {
@@ -217,7 +217,7 @@ export class SkupperGrpcRouterImage extends w8s.BaseImage {
 				}
 
 				if (route.connectorSite === siteID) {
-					return await forwardToConnector(ctx, request, route, siteID);
+					return await forwardToTarget(ctx, request, route, siteID);
 				}
 
 				try {
@@ -258,14 +258,14 @@ export class SkupperGrpcRouterImage extends w8s.BaseImage {
 				});
 			}
 
-			return await forwardToConnector(ctx, request, route, siteID);
+			return await forwardToTarget(ctx, request, route, siteID);
 		});
 
 		return await ctx.waitUntilKilled();
 	}
 }
 
-async function forwardToConnector(
+async function forwardToTarget(
 	ctx: w8s.ProcessContext,
 	request: w8s.HttpRequest,
 	route: RouterRoute,
@@ -273,8 +273,8 @@ async function forwardToConnector(
 ): Promise<w8s.HttpResponse> {
 	try {
 		return await ctx.fetch(
-			`http://${route.connectorName}.${route.connectorSite}.svc.cluster.local:${route.connectorPort}${request.url.pathname}`,
-			requestInit(request, forwardingHeaders(request, routerHeaders(route, siteID, "destination"))),
+			`${route.targetURL}${request.url.pathname}`,
+			requestInit(request, forwardingHeaders(request, routerHeaders(route, siteID, "connector"))),
 		);
 	} catch {
 		return jsonResponse(503, {
@@ -284,7 +284,7 @@ async function forwardToConnector(
 			site: siteID,
 			listener: route.listener,
 			routingKey: route.routingKey,
-			message: "connector is unavailable",
+			message: "target service is unavailable",
 		});
 	}
 }
@@ -292,7 +292,7 @@ async function forwardToConnector(
 function routerHeaders(
 	route: RouterRoute,
 	siteID: string,
-	stage: "destination" | "source",
+	stage: "connector" | "source",
 ): Record<string, string> {
 	return {
 		"x-demo-protocol": "grpc-simulated",
@@ -323,14 +323,13 @@ function isRouterRoute(value: unknown): value is RouterRoute {
 	}
 	const route = value as Record<string, unknown>;
 	return (
-		typeof route.connectorName === "string" &&
-		typeof route.connectorPort === "number" &&
 		typeof route.connectorSite === "string" &&
 		typeof route.host === "string" &&
 		typeof route.listener === "string" &&
 		typeof route.listenerSite === "string" &&
 		typeof route.port === "number" &&
-		typeof route.routingKey === "string"
+		typeof route.routingKey === "string" &&
+		typeof route.targetURL === "string"
 	);
 }
 
@@ -356,52 +355,6 @@ function getHeaderValue(header: w8s.HttpHeader, name: string): string | undefine
 	const lowerName = name.toLowerCase();
 	const key = Object.keys(header).find((candidate) => candidate.toLowerCase() === lowerName);
 	return key ? header[key]?.[0] : undefined;
-}
-
-export class SkupperGrpcConnectorImage extends w8s.BaseImage {
-	static readonly imageName = "demo/skupper-grpc-connector";
-	static readonly imageVersion = "1.0";
-
-	readonly defaultCommand = ["connector"];
-
-	override async exec(ctx: w8s.ProcessContext, argv: readonly string[]): Promise<number> {
-		if (argv[0] !== "connector") {
-			return await super.exec(ctx, argv);
-		}
-
-		const siteID = env(ctx, "SITE_ID", "grpc-a");
-		const routingKey = env(ctx, "ROUTING_KEY", "service");
-		const targetURL = env(ctx, "TARGET_URL", "http://service-real");
-		const port = Number(env(ctx, "PORT", "8080"));
-
-		ctx.listenHttp(port, async (_ctx, request) => {
-			try {
-				return await ctx.fetch(
-					`${targetURL}${request.url.pathname}`,
-					requestInit(
-						request,
-						forwardingHeaders(request, {
-							"x-demo-protocol": "grpc-simulated",
-							"x-skupper-sim-hop": "connector",
-							"x-skupper-sim-routing-key": routingKey,
-							"x-skupper-sim-to-site": siteID,
-						}),
-					),
-				);
-			} catch (error) {
-				return jsonResponse(502, {
-					status: "error",
-					protocol: "grpc-simulated",
-					service: "connector",
-					site: siteID,
-					routingKey,
-					message: error instanceof Error ? error.message : String(error),
-				});
-			}
-		});
-
-		return await ctx.waitUntilKilled();
-	}
 }
 
 export class SkupperGrpcLoadGeneratorImage extends w8s.BaseImage {

@@ -21,7 +21,8 @@ export function SkupperGrpcPanel() {
 			</div>
 			<div className="md:col-span-2">
 				Load generator traffic enters frontend on site A, then follows Skupper-style listener
-				Services into site routers. Moving labels show routing keys on router-to-router transport.
+				Services into site routers. Connector routes are labels on router traffic, not separate
+				forwarding pods.
 			</div>
 		</section>
 	);

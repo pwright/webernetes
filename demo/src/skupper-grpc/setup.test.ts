@@ -109,6 +109,7 @@ browser.describe("skupper grpc resource builders", () => {
 			connectorSite?: string;
 			listener?: string;
 			routingKey?: string;
+			targetURL?: string;
 		}>;
 
 		expect(routes).toContainEqual(
@@ -116,6 +117,7 @@ browser.describe("skupper grpc resource builders", () => {
 				listener: "grpc-a/adservice:9555",
 				routingKey: "adservice",
 				connectorSite: "grpc-b",
+				targetURL: "http://adservice-real.grpc-b.svc.cluster.local:9555",
 			}),
 		);
 		expect(routes).toContainEqual(
@@ -123,6 +125,7 @@ browser.describe("skupper grpc resource builders", () => {
 				listener: "grpc-a/shippingservice:50051",
 				routingKey: "shippingservice",
 				connectorSite: "grpc-c",
+				targetURL: "http://shippingservice-real.grpc-c.svc.cluster.local:50051",
 			}),
 		);
 	});
@@ -134,24 +137,11 @@ browser.describe("skupper grpc resource builders", () => {
 		expect(deploymentExists("grpc-b", "skupper-router")).toBe(true);
 	});
 
-	it("exposes connector services for destination routers", () => {
-		expect(serviceResource("grpc-b", "adservice-connector").spec?.selector).toEqual({
-			app: "adservice-connector",
-		});
-		expect(serviceResource("grpc-c", "shippingservice-connector").spec?.selector).toEqual({
-			app: "shippingservice-connector",
-		});
-	});
-
-	it("configures connectors with routing keys and targets", () => {
-		expect(containerEnv("grpc-b", "checkoutservice-connector")).toMatchObject({
-			ROUTING_KEY: "checkoutservice",
-			TARGET_URL: "http://checkoutservice-real.grpc-b.svc.cluster.local:5050",
-		});
-		expect(containerEnv("grpc-c", "shippingservice-connector")).toMatchObject({
-			ROUTING_KEY: "shippingservice",
-			TARGET_URL: "http://shippingservice-real.grpc-c.svc.cluster.local:50051",
-		});
+	it("does not create connector forwarding pods or services", () => {
+		expect(deploymentExists("grpc-b", "adservice-connector")).toBe(false);
+		expect(deploymentExists("grpc-c", "shippingservice-connector")).toBe(false);
+		expect(serviceExists("grpc-b", "adservice-connector")).toBe(false);
+		expect(serviceExists("grpc-c", "shippingservice-connector")).toBe(false);
 	});
 });
 
@@ -196,6 +186,15 @@ function deploymentExists(namespace: string, name: string): boolean {
 	return skupperGrpcResources().some(
 		(resource) =>
 			resource.kind === "Deployment" &&
+			resource.metadata?.namespace === namespace &&
+			resource.metadata.name === name,
+	);
+}
+
+function serviceExists(namespace: string, name: string): boolean {
+	return skupperGrpcResources().some(
+		(resource) =>
+			resource.kind === "Service" &&
 			resource.metadata?.namespace === namespace &&
 			resource.metadata.name === name,
 	);
