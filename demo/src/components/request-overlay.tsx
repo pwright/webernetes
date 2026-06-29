@@ -42,6 +42,7 @@ interface Flight {
 	to: Point;
 	durationMs: number;
 	kind: FlightKind;
+	label?: string;
 	event: w8s.NetworkRequestEvent | w8s.NetworkResponseEvent;
 }
 
@@ -135,7 +136,9 @@ function FlightDot({
 	paused: boolean;
 }) {
 	const dotRef = useRef<HTMLDivElement>(null);
+	const labelRef = useRef<HTMLDivElement>(null);
 	const animationRef = useRef<Animation | null>(null);
+	const labelAnimationRef = useRef<Animation | null>(null);
 
 	useLayoutEffect(() => {
 		const dot = dotRef.current;
@@ -156,13 +159,34 @@ function FlightDot({
 		);
 		animationRef.current = animation;
 
+		const label = labelRef.current;
+		if (label) {
+			label.style.transform = labelTransform(flight.from);
+			label.style.visibility = "visible";
+			labelAnimationRef.current = label.animate(
+				[
+					{ opacity: 0, transform: labelTransform(flight.from) },
+					{ opacity: 1, transform: labelTransform(flight.from), offset: 0.12 },
+					{ opacity: 0, transform: labelTransform(flight.to) },
+				],
+				{
+					duration: Math.min(flight.durationMs, 900),
+					easing: "linear",
+					fill: "forwards",
+				},
+			);
+		}
+
 		void animation.finished.then(
 			() => onDone(flight.id),
 			() => undefined,
 		);
 		return () => {
+			const labelAnimation = labelAnimationRef.current;
 			animationRef.current = null;
+			labelAnimationRef.current = null;
 			animation.cancel();
+			labelAnimation?.cancel();
 		};
 	}, [flight, onDone]);
 
@@ -173,23 +197,36 @@ function FlightDot({
 		}
 		if (paused) {
 			animation.pause();
+			labelAnimationRef.current?.pause();
 		} else {
 			animation.play();
+			labelAnimationRef.current?.play();
 		}
 	}, [paused]);
 
 	const Dot = flightDotComponent(flight.kind);
 	return (
-		<HoverCard.Root closeDelay={200} openDelay={0}>
-			<HoverCard.Trigger asChild>
-				<Dot
-					ref={dotRef}
-					className={paused ? "pointer-events-auto" : ""}
+		<>
+			<HoverCard.Root closeDelay={200} openDelay={0}>
+				<HoverCard.Trigger asChild>
+					<Dot
+						ref={dotRef}
+						className={paused ? "pointer-events-auto" : ""}
+						style={{ visibility: "hidden" }}
+					/>
+				</HoverCard.Trigger>
+				{paused ? <RequestHoverCardContent event={flight.event} /> : undefined}
+			</HoverCard.Root>
+			{flight.label ? (
+				<div
+					ref={labelRef}
+					className="bg-canvas text-strong border-muted pointer-events-none absolute left-0 top-0 z-20 max-w-28 truncate rounded border px-1.5 py-0.5 font-mono text-[0.625rem] shadow-sm"
 					style={{ visibility: "hidden" }}
-				/>
-			</HoverCard.Trigger>
-			{paused ? <RequestHoverCardContent event={flight.event} /> : undefined}
-		</HoverCard.Root>
+				>
+					{flight.label}
+				</div>
+			) : undefined}
+		</>
 	);
 }
 
@@ -457,6 +494,7 @@ function buildFlight(
 		to,
 		durationMs,
 		kind,
+		label: communicationLabel(event),
 	};
 }
 
@@ -624,6 +662,22 @@ function failedResponse(event: w8s.NetworkResponseEvent): boolean {
 
 function dotTransform(point: { x: number; y: number }): string {
 	return `translate(${point.x}px, ${point.y}px) translate(-50%, -50%)`;
+}
+
+function labelTransform(point: { x: number; y: number }): string {
+	return `translate(${point.x}px, ${point.y}px) translate(0.5rem, -1.25rem)`;
+}
+
+function communicationLabel(
+	event: w8s.NetworkRequestEvent | w8s.NetworkResponseEvent,
+): string | undefined {
+	if (isResponseEvent(event)) {
+		return undefined;
+	}
+	if (getHeader(event.request.header, "x-skupper-sim-hop") !== "router:source") {
+		return undefined;
+	}
+	return getHeader(event.request.header, "x-skupper-sim-routing-key");
 }
 
 function flightDotComponent(kind: FlightKind): DotComponent {

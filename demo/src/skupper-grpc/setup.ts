@@ -2,8 +2,8 @@ import * as w8s from "webernetes";
 
 import {
 	SkupperGrpcConnectorImage,
-	SkupperGrpcListenerImage,
 	SkupperGrpcLoadGeneratorImage,
+	SkupperGrpcRouterImage,
 	SkupperGrpcServiceImage,
 } from "./images";
 
@@ -28,6 +28,18 @@ type ConnectorDefinition = {
 	site: SiteID;
 };
 
+type RouterRoute = {
+	connectorName: string;
+	connectorPort: number;
+	connectorSite: SiteID;
+	host: string;
+	listener: string;
+	listenerSite: SiteID;
+	port: number;
+	routingKey: string;
+};
+
+const routerTransportPort = 7777;
 const siteIDs: SiteID[] = ["grpc-a", "grpc-b", "grpc-c"];
 
 const services: ServiceDefinition[] = [
@@ -106,7 +118,7 @@ const connectors: ConnectorDefinition[] = [
 
 export async function setupSkupperGrpc(cluster: w8s.Cluster): Promise<void> {
 	cluster.registerImage(SkupperGrpcServiceImage);
-	cluster.registerImage(SkupperGrpcListenerImage);
+	cluster.registerImage(SkupperGrpcRouterImage);
 	cluster.registerImage(SkupperGrpcConnectorImage);
 	cluster.registerImage(SkupperGrpcLoadGeneratorImage);
 
@@ -117,7 +129,8 @@ export function skupperGrpcResources(): w8s.ClusterApplyResource[] {
 	const resources: w8s.ClusterApplyResource[] = siteIDs.map(namespace);
 
 	resources.push(...services.flatMap(serviceResources));
-	resources.push(...listeners.flatMap(listenerResources));
+	resources.push(...siteIDs.flatMap(routerResources));
+	resources.push(...listeners.map(listenerService));
 	resources.push(...connectors.flatMap(connectorResources));
 	resources.push(loadGeneratorDeployment());
 
@@ -168,38 +181,48 @@ function serviceResources(definition: ServiceDefinition): w8s.ClusterApplyResour
 	return resources;
 }
 
-function listenerResources(definition: ListenerDefinition): w8s.ClusterApplyResource[] {
-	const connector = connectorFor(definition.name);
+function routerResources(site: SiteID): w8s.ClusterApplyResource[] {
+	const listenerPorts = listeners
+		.filter((listener) => listener.site === site)
+		.map((listener) => listener.port);
+	const ports = [routerTransportPort, ...listenerPorts].filter(
+		(port, index, allPorts) => allPorts.indexOf(port) === index,
+	);
 	const container: w8s.V1Container = {
-		name: "listener",
-		image: "demo/skupper-grpc-listener:1.0",
-		ports: [{ name: "grpc", containerPort: definition.port }],
+		name: "router",
+		image: "demo/skupper-grpc-router:1.0",
+		ports: ports.map((port) => ({ containerPort: port })),
 		env: [
-			{ name: "SITE_ID", value: definition.site },
-			{ name: "ROUTING_KEY", value: definition.name },
-			{ name: "PORT", value: String(definition.port) },
-			{
-				name: "CONNECTOR_URL",
-				value: `http://${connectorDeploymentName(definition.name)}.${connector.site}.svc.cluster.local:${connector.port}`,
-			},
+			{ name: "SITE_ID", value: site },
+			{ name: "TRANSPORT_PORT", value: String(routerTransportPort) },
+			{ name: "ROUTES", value: JSON.stringify(routerRoutes()) },
 		],
 	};
 
 	return [
 		deployment({
-			namespace: definition.site,
-			name: listenerDeploymentName(definition.name),
-			labels: workloadLabels(listenerDeploymentName(definition.name), definition.site, "listener"),
-			nodeName: definition.site,
+			namespace: site,
+			name: routerDeploymentName(),
+			labels: workloadLabels(routerDeploymentName(), site, "router"),
+			nodeName: site,
 			containers: [container],
 		}),
 		service({
-			namespace: definition.site,
-			name: definition.name,
-			selector: { app: listenerDeploymentName(definition.name) },
-			port: definition.port,
+			namespace: site,
+			name: routerDeploymentName(),
+			selector: { app: routerDeploymentName() },
+			port: routerTransportPort,
 		}),
 	];
+}
+
+function listenerService(definition: ListenerDefinition): w8s.ClusterApplyResource {
+	return service({
+		namespace: definition.site,
+		name: definition.name,
+		selector: { app: routerDeploymentName() },
+		port: definition.port,
+	});
 }
 
 function connectorResources(definition: ConnectorDefinition): w8s.ClusterApplyResource[] {
@@ -344,12 +367,12 @@ function connectorFor(name: string): ConnectorDefinition {
 	return connector;
 }
 
-function listenerDeploymentName(name: string): string {
-	return `${name}-listener`;
-}
-
 function connectorDeploymentName(name: string): string {
 	return `${name}-connector`;
+}
+
+function routerDeploymentName(): string {
+	return "skupper-router";
 }
 
 function realServiceName(name: string): string {
@@ -359,7 +382,23 @@ function realServiceName(name: string): string {
 function workloadLabels(
 	app: string,
 	site: SiteID,
-	role: "client" | "connector" | "listener" | "service",
+	role: "client" | "connector" | "router" | "service",
 ): Record<string, string> {
 	return { app, site, role };
+}
+
+function routerRoutes(): RouterRoute[] {
+	return listeners.map((listener) => {
+		const connector = connectorFor(listener.name);
+		return {
+			connectorName: connectorDeploymentName(connector.name),
+			connectorPort: connector.port,
+			connectorSite: connector.site,
+			host: listener.name,
+			listener: `${listener.site}/${listener.name}:${listener.port}`,
+			listenerSite: listener.site,
+			port: listener.port,
+			routingKey: listener.name,
+		};
+	});
 }

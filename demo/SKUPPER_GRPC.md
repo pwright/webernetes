@@ -22,9 +22,12 @@ The frontend calls service names from the original example, such as
 `shippingservice:50051`.
 
 Listener Services keep those original service names local to each simulated
-site. Listener pods forward to connector pods for the matching routing key.
-Connector pods forward to the real workload Service in the site that owns the
-workload.
+site. Each Listener Service selects the local `skupper-router` pod. The source
+router labels the request with the listener name, such as
+`grpc-a/adservice:9555`, and forwards remote traffic to the destination site's
+router. The destination router forwards to the connector pod for the matching
+routing key, and the connector forwards to the real workload Service in the site
+that owns the workload.
 
 ## Run
 
@@ -54,8 +57,9 @@ The load generator manifest is used as the traffic-source model:
 ## What this demonstrates
 
 - A three-site service topology.
-- Skupper-style Listener and Connector hops.
+- Skupper-style Listener, Router, and Connector hops.
 - Routing keys for the Online Boutique service names.
+- Short moving labels for router-to-router routing keys.
 - Traffic entering at the frontend on site A.
 - Remote dependency calls from site A to B and C.
 - Remote dependency calls from checkout on site B to C.

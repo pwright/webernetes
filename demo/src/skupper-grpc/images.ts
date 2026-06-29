@@ -174,50 +174,188 @@ export class SkupperGrpcServiceImage extends w8s.BaseImage {
 	}
 }
 
-export class SkupperGrpcListenerImage extends w8s.BaseImage {
-	static readonly imageName = "demo/skupper-grpc-listener";
+type RouterRoute = {
+	connectorName: string;
+	connectorPort: number;
+	connectorSite: string;
+	host: string;
+	listener: string;
+	listenerSite: string;
+	port: number;
+	routingKey: string;
+};
+
+export class SkupperGrpcRouterImage extends w8s.BaseImage {
+	static readonly imageName = "demo/skupper-grpc-router";
 	static readonly imageVersion = "1.0";
 
-	readonly defaultCommand = ["listener"];
+	readonly defaultCommand = ["router"];
 
 	override async exec(ctx: w8s.ProcessContext, argv: readonly string[]): Promise<number> {
-		if (argv[0] !== "listener") {
+		if (argv[0] !== "router") {
 			return await super.exec(ctx, argv);
 		}
 
 		const siteID = env(ctx, "SITE_ID", "grpc-a");
-		const routingKey = env(ctx, "ROUTING_KEY", "service");
-		const connectorURL = env(ctx, "CONNECTOR_URL", "http://connector");
-		const port = Number(env(ctx, "PORT", "8080"));
+		const transportPort = Number(env(ctx, "TRANSPORT_PORT", "7777"));
+		const routes = parseRoutes(ctx.env.get("ROUTES"));
+		const listenerPorts = new Set(
+			routes.filter((route) => route.listenerSite === siteID).map((route) => route.port),
+		);
 
-		ctx.listenHttp(port, async (_ctx, request) => {
-			try {
-				return await ctx.fetch(
-					`${connectorURL}${request.url.pathname}`,
-					requestInit(
-						request,
-						forwardingHeaders(request, {
-							"x-demo-protocol": "grpc-simulated",
-							"x-skupper-sim-hop": "listener",
-							"x-skupper-sim-routing-key": routingKey,
-							"x-skupper-sim-from-site": siteID,
-						}),
-					),
-				);
-			} catch {
-				return jsonResponse(503, {
-					status: "unavailable",
+		for (const port of listenerPorts) {
+			ctx.listenHttp(port, async (_ctx, request) => {
+				const route = sourceRoute(routes, siteID, port, request);
+				if (!route) {
+					return jsonResponse(404, {
+						status: "not_found",
+						protocol: "grpc-simulated",
+						service: "router",
+						site: siteID,
+						message: `no listener route for ${request.host}`,
+					});
+				}
+
+				if (route.connectorSite === siteID) {
+					return await forwardToConnector(ctx, request, route, siteID);
+				}
+
+				try {
+					return await ctx.fetch(
+						`http://skupper-router.${route.connectorSite}.svc.cluster.local:${transportPort}${request.url.pathname}`,
+						requestInit(
+							request,
+							forwardingHeaders(request, routerHeaders(route, siteID, "source")),
+						),
+					);
+				} catch {
+					return jsonResponse(503, {
+						status: "unavailable",
+						protocol: "grpc-simulated",
+						service: "router",
+						site: siteID,
+						listener: route.listener,
+						routingKey: route.routingKey,
+						message: "destination router is unavailable",
+					});
+				}
+			});
+		}
+
+		ctx.listenHttp(transportPort, async (_ctx, request) => {
+			const routingKey = getHeaderValue(request.header, "x-skupper-sim-routing-key");
+			const route = routes.find(
+				(candidate) => candidate.routingKey === routingKey && candidate.connectorSite === siteID,
+			);
+			if (!route) {
+				return jsonResponse(404, {
+					status: "not_found",
 					protocol: "grpc-simulated",
-					service: "listener",
+					service: "router",
 					site: siteID,
 					routingKey,
-					message: "connector is unavailable",
+					message: "no connector route for routing key",
 				});
 			}
+
+			return await forwardToConnector(ctx, request, route, siteID);
 		});
 
 		return await ctx.waitUntilKilled();
 	}
+}
+
+async function forwardToConnector(
+	ctx: w8s.ProcessContext,
+	request: w8s.HttpRequest,
+	route: RouterRoute,
+	siteID: string,
+): Promise<w8s.HttpResponse> {
+	try {
+		return await ctx.fetch(
+			`http://${route.connectorName}.${route.connectorSite}.svc.cluster.local:${route.connectorPort}${request.url.pathname}`,
+			requestInit(request, forwardingHeaders(request, routerHeaders(route, siteID, "destination"))),
+		);
+	} catch {
+		return jsonResponse(503, {
+			status: "unavailable",
+			protocol: "grpc-simulated",
+			service: "router",
+			site: siteID,
+			listener: route.listener,
+			routingKey: route.routingKey,
+			message: "connector is unavailable",
+		});
+	}
+}
+
+function routerHeaders(
+	route: RouterRoute,
+	siteID: string,
+	stage: "destination" | "source",
+): Record<string, string> {
+	return {
+		"x-demo-protocol": "grpc-simulated",
+		"x-skupper-sim-hop": `router:${stage}`,
+		"x-skupper-sim-listener": route.listener,
+		"x-skupper-sim-routing-key": route.routingKey,
+		"x-skupper-sim-from-site": route.listenerSite,
+		"x-skupper-sim-router-site": siteID,
+		"x-skupper-sim-to-site": route.connectorSite,
+	};
+}
+
+function parseRoutes(value: string | undefined): RouterRoute[] {
+	if (!value) {
+		return [];
+	}
+	try {
+		const parsed: unknown = JSON.parse(value);
+		return Array.isArray(parsed) ? parsed.filter(isRouterRoute) : [];
+	} catch {
+		return [];
+	}
+}
+
+function isRouterRoute(value: unknown): value is RouterRoute {
+	if (value === null || typeof value !== "object") {
+		return false;
+	}
+	const route = value as Record<string, unknown>;
+	return (
+		typeof route.connectorName === "string" &&
+		typeof route.connectorPort === "number" &&
+		typeof route.connectorSite === "string" &&
+		typeof route.host === "string" &&
+		typeof route.listener === "string" &&
+		typeof route.listenerSite === "string" &&
+		typeof route.port === "number" &&
+		typeof route.routingKey === "string"
+	);
+}
+
+function sourceRoute(
+	routes: RouterRoute[],
+	siteID: string,
+	port: number,
+	request: w8s.HttpRequest,
+): RouterRoute | undefined {
+	const host = requestHostName(request);
+	const candidates = routes.filter((route) => route.listenerSite === siteID && route.port === port);
+	return (
+		candidates.find((route) => route.host === host || route.routingKey === host) ??
+		(candidates.length === 1 ? candidates[0] : undefined)
+	);
+}
+
+function requestHostName(request: w8s.HttpRequest): string {
+	return request.host.split(":", 1)[0] || request.url.hostname;
+}
+
+function getHeaderValue(header: w8s.HttpHeader, name: string): string | undefined {
+	const lowerName = name.toLowerCase();
+	const key = Object.keys(header).find((candidate) => candidate.toLowerCase() === lowerName);
+	return key ? header[key]?.[0] : undefined;
 }
 
 export class SkupperGrpcConnectorImage extends w8s.BaseImage {

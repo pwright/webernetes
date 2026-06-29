@@ -57,6 +57,25 @@ browser.describe("skupper grpc resource builders", () => {
 		});
 	});
 
+	it("creates one router per simulated site", () => {
+		expect(containerEnv("grpc-a", "skupper-router")).toMatchObject({
+			SITE_ID: "grpc-a",
+		});
+		expect(containerEnv("grpc-b", "skupper-router")).toMatchObject({
+			SITE_ID: "grpc-b",
+		});
+		expect(containerEnv("grpc-c", "skupper-router")).toMatchObject({
+			SITE_ID: "grpc-c",
+		});
+		expect(servicePort("grpc-a", "skupper-router")).toEqual({
+			port: 7777,
+			targetPort: 7777,
+		});
+		expect(serviceResource("grpc-b", "skupper-router").spec?.selector).toEqual({
+			app: "skupper-router",
+		});
+	});
+
 	it("creates site A listener services for remote dependencies", () => {
 		expect(servicePort("grpc-a", "cartservice")).toEqual({ port: 7070, targetPort: 7070 });
 		expect(servicePort("grpc-a", "checkoutservice")).toEqual({ port: 5050, targetPort: 5050 });
@@ -76,12 +95,51 @@ browser.describe("skupper grpc resource builders", () => {
 		});
 	});
 
-	it("routes listener services to listener pods", () => {
+	it("routes listener services through the local router", () => {
 		expect(serviceResource("grpc-a", "checkoutservice").spec?.selector).toEqual({
-			app: "checkoutservice-listener",
+			app: "skupper-router",
 		});
 		expect(serviceResource("grpc-b", "paymentservice").spec?.selector).toEqual({
-			app: "paymentservice-listener",
+			app: "skupper-router",
+		});
+	});
+
+	it("labels router traffic with listener and destination information", () => {
+		const routes = JSON.parse(containerEnv("grpc-a", "skupper-router").ROUTES ?? "[]") as Array<{
+			connectorSite?: string;
+			listener?: string;
+			routingKey?: string;
+		}>;
+
+		expect(routes).toContainEqual(
+			expect.objectContaining({
+				listener: "grpc-a/adservice:9555",
+				routingKey: "adservice",
+				connectorSite: "grpc-b",
+			}),
+		);
+		expect(routes).toContainEqual(
+			expect.objectContaining({
+				listener: "grpc-a/shippingservice:50051",
+				routingKey: "shippingservice",
+				connectorSite: "grpc-c",
+			}),
+		);
+	});
+
+	it("does not create per-listener forwarding pods", () => {
+		expect(deploymentExists("grpc-a", "checkoutservice-listener")).toBe(false);
+		expect(deploymentExists("grpc-b", "paymentservice-listener")).toBe(false);
+		expect(deploymentExists("grpc-a", "skupper-router")).toBe(true);
+		expect(deploymentExists("grpc-b", "skupper-router")).toBe(true);
+	});
+
+	it("exposes connector services for destination routers", () => {
+		expect(serviceResource("grpc-b", "adservice-connector").spec?.selector).toEqual({
+			app: "adservice-connector",
+		});
+		expect(serviceResource("grpc-c", "shippingservice-connector").spec?.selector).toEqual({
+			app: "shippingservice-connector",
 		});
 	});
 
@@ -132,6 +190,15 @@ function deploymentResource(namespace: string, name: string): TestDeploymentReso
 	) as TestDeploymentResource | undefined;
 	expect(deployment).toBeDefined();
 	return deployment;
+}
+
+function deploymentExists(namespace: string, name: string): boolean {
+	return skupperGrpcResources().some(
+		(resource) =>
+			resource.kind === "Deployment" &&
+			resource.metadata?.namespace === namespace &&
+			resource.metadata.name === name,
+	);
 }
 
 function deploymentNodeName(namespace: string, name: string): string | undefined {

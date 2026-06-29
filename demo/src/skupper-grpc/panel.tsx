@@ -17,11 +17,11 @@ export function SkupperGrpcPanel() {
 				<span className="text-muted">Site C:</span> email, payment, shipping
 			</div>
 			<div>
-				<span className="text-muted">Protocol:</span> gRPC-shaped HTTP simulation
+				<span className="text-muted">Transport:</span> site router to site router
 			</div>
 			<div className="md:col-span-2">
-				Load generator traffic enters frontend on site A, then follows Skupper-style listener and
-				connector hops to services distributed across sites A, B, and C.
+				Load generator traffic enters frontend on site A, then follows Skupper-style listener
+				Services into site routers. Moving labels show routing keys on router-to-router transport.
 			</div>
 		</section>
 	);
