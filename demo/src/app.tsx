@@ -7,6 +7,9 @@ import { RequestOverlay } from "./components/request-overlay";
 import { ResourcesTabs } from "./components/resources-tabs";
 import { distance, getHeader, healthCheckHeader, idFor, kubeletIdForNodeName } from "./helpers";
 import { useCluster, usePauseClusterWhenPageInactive } from "./hooks";
+import { SkupperGrpcPanel } from "./skupper-grpc/panel";
+import { setupSkupperGrpc } from "./skupper-grpc/setup";
+import { isSkupperGrpcScenario } from "./skupper-grpc/url";
 import { SkupperPlainPanel } from "./skupper-plain/panel";
 import { setupSkupperPlain } from "./skupper-plain/setup";
 import { isSkupperPlainScenario } from "./skupper-plain/url";
@@ -27,19 +30,30 @@ const skupperPlainClusterOptions: w8s.ClusterOptions = {
 	...demoClusterOptions,
 	nodeNames: ["west", "east"],
 };
+const skupperGrpcClusterOptions: w8s.ClusterOptions = {
+	...demoClusterOptions,
+	nodeNames: ["grpc-a", "grpc-b", "grpc-c"],
+};
 const skupperPlainNodeOrder = ["west", "east"] as const;
 const skupperPlainNamespaces = ["west", "east"] as const;
+const skupperGrpcNodeOrder = ["grpc-a", "grpc-b", "grpc-c"] as const;
+const skupperGrpcNamespaces = ["grpc-a", "grpc-b", "grpc-c"] as const;
 
 export function App() {
 	const skupperPlain = isSkupperPlainScenario();
-	const setupCluster = skupperPlain ? setupSkupperPlain : setup;
+	const skupperGrpc = isSkupperGrpcScenario();
+	const setupCluster = skupperGrpc ? setupSkupperGrpc : skupperPlain ? setupSkupperPlain : setup;
 	const { cluster, reset } = useCluster(
 		setupCluster,
-		skupperPlain ? skupperPlainClusterOptions : demoClusterOptions,
+		skupperGrpc
+			? skupperGrpcClusterOptions
+			: skupperPlain
+				? skupperPlainClusterOptions
+				: demoClusterOptions,
 	);
 	usePauseClusterWhenPageInactive(cluster);
 	const [namespace, setNamespace] = useState<string | undefined>(
-		skupperPlain ? undefined : "default",
+		skupperPlain || skupperGrpc ? undefined : "default",
 	);
 	const [highlightedPodIds, setHighlightedPodIds] = useState<Set<string>>(new Set());
 	const requestLayerRef = useRef<HTMLDivElement>(null);
@@ -63,14 +77,21 @@ export function App() {
 			/>
 			<main className="space-y-6">
 				{skupperPlain ? <SkupperPlainPanel /> : undefined}
+				{skupperGrpc ? <SkupperGrpcPanel /> : undefined}
 				<div ref={requestLayerRef} className="relative space-y-6">
 					<Cluster
 						cluster={cluster}
 						highlightedPodIds={highlightedPodIds}
 						namespace={namespace}
-						nodeOrder={skupperPlain ? skupperPlainNodeOrder : undefined}
+						nodeOrder={
+							skupperGrpc ? skupperGrpcNodeOrder : skupperPlain ? skupperPlainNodeOrder : undefined
+						}
 						visibleNamespaces={
-							skupperPlain && namespace === undefined ? skupperPlainNamespaces : undefined
+							skupperGrpc && namespace === undefined
+								? skupperGrpcNamespaces
+								: skupperPlain && namespace === undefined
+									? skupperPlainNamespaces
+									: undefined
 						}
 					/>
 					<RequestOverlay cluster={cluster} containerRef={requestLayerRef} namespace={namespace} />

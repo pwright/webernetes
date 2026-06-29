@@ -1,0 +1,139 @@
+import { expect, it } from "vitest";
+
+import { browser } from "../../../src/test/describe";
+import { skupperGrpcResources } from "./setup";
+
+type TestServiceResource = {
+	kind: "Service";
+	metadata?: { name?: string; namespace?: string };
+	spec?: {
+		ports?: Array<{ port?: number; targetPort?: number | string }>;
+		selector?: Record<string, string>;
+	};
+};
+
+type TestDeploymentResource = {
+	kind: "Deployment";
+	metadata?: { name?: string; namespace?: string };
+	spec?: {
+		template?: {
+			spec?: {
+				containers?: Array<{
+					env?: Array<{ name: string; value?: string }>;
+					image?: string;
+					name?: string;
+					ports?: Array<{ containerPort?: number }>;
+				}>;
+				nodeName?: string;
+			};
+		};
+	};
+};
+
+browser.describe("skupper grpc resource builders", () => {
+	it("creates one namespace per simulated site", () => {
+		const namespaces = skupperGrpcResources().filter((resource) => resource.kind === "Namespace");
+
+		expect(namespaces.map((resource) => resource.metadata?.name).toSorted()).toEqual([
+			"grpc-a",
+			"grpc-b",
+			"grpc-c",
+		]);
+	});
+
+	it("pins workloads to their simulated site nodes", () => {
+		expect(deploymentNodeName("grpc-a", "frontend")).toBe("grpc-a");
+		expect(deploymentNodeName("grpc-a", "loadgenerator")).toBe("grpc-a");
+		expect(deploymentNodeName("grpc-b", "checkoutservice")).toBe("grpc-b");
+		expect(deploymentNodeName("grpc-b", "cartservice")).toBe("grpc-b");
+		expect(deploymentNodeName("grpc-c", "emailservice")).toBe("grpc-c");
+		expect(deploymentNodeName("grpc-c", "shippingservice")).toBe("grpc-c");
+	});
+
+	it("keeps the load generator pointed at frontend:80", () => {
+		expect(containerEnv("grpc-a", "loadgenerator")).toMatchObject({
+			FRONTEND_ADDR: "frontend:80",
+			USERS: "10",
+		});
+	});
+
+	it("creates site A listener services for remote dependencies", () => {
+		expect(servicePort("grpc-a", "cartservice")).toEqual({ port: 7070, targetPort: 7070 });
+		expect(servicePort("grpc-a", "checkoutservice")).toEqual({ port: 5050, targetPort: 5050 });
+		expect(servicePort("grpc-a", "currencyservice")).toEqual({ port: 7000, targetPort: 7000 });
+		expect(servicePort("grpc-a", "shippingservice")).toEqual({ port: 50051, targetPort: 50051 });
+	});
+
+	it("creates site B listener services for site C dependencies", () => {
+		expect(servicePort("grpc-b", "emailservice")).toEqual({ port: 8080, targetPort: 8080 });
+		expect(servicePort("grpc-b", "paymentservice")).toEqual({
+			port: 50051,
+			targetPort: 50051,
+		});
+		expect(servicePort("grpc-b", "shippingservice")).toEqual({
+			port: 50051,
+			targetPort: 50051,
+		});
+	});
+
+	it("routes listener services to listener pods", () => {
+		expect(serviceResource("grpc-a", "checkoutservice").spec?.selector).toEqual({
+			app: "checkoutservice-listener",
+		});
+		expect(serviceResource("grpc-b", "paymentservice").spec?.selector).toEqual({
+			app: "paymentservice-listener",
+		});
+	});
+
+	it("configures connectors with routing keys and targets", () => {
+		expect(containerEnv("grpc-b", "checkoutservice-connector")).toMatchObject({
+			ROUTING_KEY: "checkoutservice",
+			TARGET_URL: "http://checkoutservice-real.grpc-b.svc.cluster.local:5050",
+		});
+		expect(containerEnv("grpc-c", "shippingservice-connector")).toMatchObject({
+			ROUTING_KEY: "shippingservice",
+			TARGET_URL: "http://shippingservice-real.grpc-c.svc.cluster.local:50051",
+		});
+	});
+});
+
+function serviceResource(namespace: string, name: string): TestServiceResource {
+	const service = skupperGrpcResources().find(
+		(resource) =>
+			resource.kind === "Service" &&
+			resource.metadata?.namespace === namespace &&
+			resource.metadata.name === name,
+	);
+	expect(service).toBeDefined();
+	return service as TestServiceResource;
+}
+
+function servicePort(
+	namespace: string,
+	name: string,
+): { port?: number; targetPort?: number | string } {
+	const port = serviceResource(namespace, name).spec?.ports?.[0];
+	expect(port).toBeDefined();
+	return { port: port?.port, targetPort: port?.targetPort };
+}
+
+function containerEnv(namespace: string, name: string): Record<string, string> {
+	const container = deploymentResource(namespace, name).spec?.template?.spec?.containers?.[0];
+	expect(container).toBeDefined();
+	return Object.fromEntries((container?.env ?? []).map((item) => [item.name, item.value ?? ""]));
+}
+
+function deploymentResource(namespace: string, name: string): TestDeploymentResource {
+	const deployment = skupperGrpcResources().find(
+		(resource) =>
+			resource.kind === "Deployment" &&
+			resource.metadata?.namespace === namespace &&
+			resource.metadata.name === name,
+	) as TestDeploymentResource | undefined;
+	expect(deployment).toBeDefined();
+	return deployment;
+}
+
+function deploymentNodeName(namespace: string, name: string): string | undefined {
+	return deploymentResource(namespace, name).spec?.template?.spec?.nodeName;
+}
