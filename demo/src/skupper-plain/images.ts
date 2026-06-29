@@ -1,5 +1,9 @@
 import * as w8s from "webernetes";
 
+import { demoRequestIdHeader } from "../helpers";
+
+const webernetesRequestIdHeader = "X-Webernetes-Request-Id";
+
 function jsonResponse(status: number, body: unknown): w8s.HttpResponse {
 	return {
 		status,
@@ -19,6 +23,9 @@ function parseJsonBody(body: string): unknown {
 function headerClone(header: w8s.HttpHeader): w8s.HttpHeader {
 	const cloned: w8s.HttpHeader = {};
 	for (const [name, values] of Object.entries(header)) {
+		if (name.toLowerCase() === webernetesRequestIdHeader.toLowerCase()) {
+			continue;
+		}
 		cloned[name] = [...values];
 	}
 	return cloned;
@@ -65,6 +72,10 @@ function trafficGeneratorIntervalMs(value: string | undefined): number {
 	return 1000 / requestsPerSecond;
 }
 
+function demoRequestId(): string {
+	return Math.random().toString(36).slice(2, 10);
+}
+
 export class SkupperPlainFrontendImage extends w8s.BaseImage {
 	static readonly imageName = "demo/skupper-plain-frontend";
 	static readonly imageVersion = "1.0";
@@ -88,10 +99,10 @@ export class SkupperPlainFrontendImage extends w8s.BaseImage {
 			try {
 				const backendResponse = await ctx.fetch(called, {
 					method: "GET",
-					headers: {
+					headers: forwardingHeaders(request, {
 						"x-demo-source": "frontend",
 						"x-routing-key": "backend",
-					},
+					}),
 				});
 				if (backendResponse.status >= 400) {
 					return jsonResponse(502, {
@@ -261,6 +272,7 @@ export class SkupperPlainClientImage extends w8s.BaseImage {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
+						[demoRequestIdHeader]: demoRequestId(),
 						"x-demo-source": "client",
 						"x-routing-key": "backend",
 					},

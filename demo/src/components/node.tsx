@@ -2,7 +2,7 @@ import { Badge } from "@ngrok/mantle/badge";
 import { Card } from "@ngrok/mantle/card";
 import * as w8s from "webernetes";
 
-import { getName, idFor, kubeletIdForNodeName, sortByName } from "../helpers";
+import { getName, getNamespace, idFor, kubeletIdForNodeName, sortByName } from "../helpers";
 import { useInformer } from "../hooks";
 import { Pod } from "./pod";
 
@@ -11,11 +11,13 @@ export function Node({
 	highlightedPodIds,
 	namespace,
 	node,
+	visibleNamespaces,
 }: {
 	cluster: w8s.Cluster;
 	highlightedPodIds: ReadonlySet<string>;
 	namespace: string | undefined;
 	node: w8s.V1Node;
+	visibleNamespaces?: readonly string[];
 }) {
 	const name = getName(node, "unknown-node");
 	const ip = getNodeIP(node);
@@ -27,6 +29,9 @@ export function Node({
 		resource: "pods",
 		sort: sortByName,
 	});
+	const visiblePods = visibleNamespaces
+		? pods.filter((pod) => visibleNamespaces.includes(getNamespace(pod)))
+		: pods;
 
 	return (
 		<Card.Root id={idFor(node)}>
@@ -45,7 +50,7 @@ export function Node({
 			<Card.Body>
 				<div className="flex min-h-32 flex-col justify-between gap-2">
 					<div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2">
-						{pods.map((pod) => (
+						{visiblePods.map((pod) => (
 							<Pod key={idFor(pod)} highlighted={highlightedPodIds.has(idFor(pod))} pod={pod} />
 						))}
 					</div>

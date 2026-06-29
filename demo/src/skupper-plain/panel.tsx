@@ -17,8 +17,8 @@ export function SkupperPlainPanel() {
 				<span className="text-muted">Routing key:</span> backend
 			</div>
 			<div>
-				<span className="text-muted">Path:</span> client -&gt; frontend -&gt; listener -&gt;
-				connector -&gt; backend
+				<span className="text-muted">Path:</span> client -&gt; frontend -&gt; backend-listener -&gt;
+				backend-connector -&gt; backend
 			</div>
 			<div className="md:col-span-2">
 				This is a simulation of east/west traffic shape using ordinary Webernetes Deployments and

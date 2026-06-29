@@ -69,6 +69,7 @@ export interface ClusterOptions {
 	serviceCIDR?: string;
 	nodePortRange?: NodePortRange;
 	latencyProvider?: LatencyProvider;
+	nodeNames?: string[];
 }
 
 export type {
@@ -157,29 +158,16 @@ export class Cluster extends EventEmitter {
 			options: [],
 		};
 
-		this.servers = [
-			new Server(this, {
-				name: "node-1",
-				podCIDR: "10.0.0.0/24",
-				ipAddresses: ["192.168.1.1"],
-				kubeletConfiguration,
-				dnsConfig: serverDNSConfig,
-			}),
-			new Server(this, {
-				name: "node-2",
-				podCIDR: "10.0.1.0/24",
-				ipAddresses: ["192.168.1.2"],
-				kubeletConfiguration,
-				dnsConfig: serverDNSConfig,
-			}),
-			new Server(this, {
-				name: "node-3",
-				podCIDR: "10.0.2.0/24",
-				ipAddresses: ["192.168.1.3"],
-				kubeletConfiguration,
-				dnsConfig: serverDNSConfig,
-			}),
-		];
+		this.servers = (options.nodeNames ?? ["node-1", "node-2", "node-3"]).map(
+			(name, index) =>
+				new Server(this, {
+					name,
+					podCIDR: `10.0.${index}.0/24`,
+					ipAddresses: [`192.168.1.${index + 1}`],
+					kubeletConfiguration,
+					dnsConfig: serverDNSConfig,
+				}),
+		);
 
 		this.imageRegistry.register(Scheduler);
 		this.imageRegistry.register(KubeProxy);

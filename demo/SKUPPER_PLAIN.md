@@ -8,7 +8,12 @@ It uses one simulated cluster and two namespaces:
 - `west`: listening site
 - `east`: connecting site
 
-The client and frontend run in `west`.
+It shows two simulated nodes from left to right:
+
+- `west`: listening site workloads
+- `east`: connecting site workloads
+
+The client and frontend run in the `west` namespace on the `west` node.
 
 The backend runs in `east`.
 
@@ -16,11 +21,11 @@ The client generates demo traffic by calling `http://frontend/checkout`.
 
 The frontend calls `http://backend/api/hello`.
 
-In `west`, `backend` is a local Service backed by a listener pod.
+In `west`, `backend` is a local Service backed by the `backend-listener` pod.
 
-The listener forwards to an east-side connector.
+The `backend-listener` forwards to the east-side `backend-connector`.
 
-The connector forwards to the real backend.
+The `backend-connector` forwards to the real `backend` pod in `east`.
 
 ## Run
 

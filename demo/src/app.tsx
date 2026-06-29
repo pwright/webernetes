@@ -23,12 +23,24 @@ const demoClusterOptions: w8s.ClusterOptions = {
 	}),
 };
 
+const skupperPlainClusterOptions: w8s.ClusterOptions = {
+	...demoClusterOptions,
+	nodeNames: ["west", "east"],
+};
+const skupperPlainNodeOrder = ["west", "east"] as const;
+const skupperPlainNamespaces = ["west", "east"] as const;
+
 export function App() {
 	const skupperPlain = isSkupperPlainScenario();
 	const setupCluster = skupperPlain ? setupSkupperPlain : setup;
-	const { cluster, reset } = useCluster(setupCluster, demoClusterOptions);
+	const { cluster, reset } = useCluster(
+		setupCluster,
+		skupperPlain ? skupperPlainClusterOptions : demoClusterOptions,
+	);
 	usePauseClusterWhenPageInactive(cluster);
-	const [namespace, setNamespace] = useState<string | undefined>(skupperPlain ? "west" : "default");
+	const [namespace, setNamespace] = useState<string | undefined>(
+		skupperPlain ? undefined : "default",
+	);
 	const [highlightedPodIds, setHighlightedPodIds] = useState<Set<string>>(new Set());
 	const requestLayerRef = useRef<HTMLDivElement>(null);
 
@@ -52,7 +64,15 @@ export function App() {
 			<main className="space-y-6">
 				{skupperPlain ? <SkupperPlainPanel /> : undefined}
 				<div ref={requestLayerRef} className="relative space-y-6">
-					<Cluster cluster={cluster} highlightedPodIds={highlightedPodIds} namespace={namespace} />
+					<Cluster
+						cluster={cluster}
+						highlightedPodIds={highlightedPodIds}
+						namespace={namespace}
+						nodeOrder={skupperPlain ? skupperPlainNodeOrder : undefined}
+						visibleNamespaces={
+							skupperPlain && namespace === undefined ? skupperPlainNamespaces : undefined
+						}
+					/>
 					<RequestOverlay cluster={cluster} containerRef={requestLayerRef} namespace={namespace} />
 				</div>
 				<ResourcesTabs

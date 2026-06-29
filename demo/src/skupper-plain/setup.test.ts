@@ -20,6 +20,7 @@ type TestDeploymentResource = {
 					image?: string;
 					name?: string;
 				}>;
+				nodeName?: string;
 			};
 		};
 	};
@@ -69,6 +70,14 @@ browser.describe("skupper plain resource builders", () => {
 			image: "demo/skupper-plain-client:1.0",
 		});
 	});
+
+	it("pins workloads to west and east nodes", () => {
+		expect(deploymentNodeName("west", "client")).toBe("west");
+		expect(deploymentNodeName("west", "frontend")).toBe("west");
+		expect(deploymentNodeName("west", "backend-listener")).toBe("west");
+		expect(deploymentNodeName("east", "backend")).toBe("east");
+		expect(deploymentNodeName("east", "backend-connector")).toBe("east");
+	});
 });
 
 function serviceResource(namespace: string, name: string) {
@@ -97,4 +106,8 @@ function deploymentResource(namespace: string, name: string): TestDeploymentReso
 	) as TestDeploymentResource | undefined;
 	expect(deployment).toBeDefined();
 	return deployment;
+}
+
+function deploymentNodeName(namespace: string, name: string): string | undefined {
+	return deploymentResource(namespace, name).spec?.template?.spec?.nodeName;
 }

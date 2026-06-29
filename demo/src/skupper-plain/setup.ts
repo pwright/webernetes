@@ -26,6 +26,7 @@ export function skupperPlainResources(): w8s.ClusterApplyResource[] {
 			namespace: "west",
 			name: "frontend",
 			labels: { app: "frontend", site: "west", role: "frontend" },
+			nodeName: "west",
 			containers: [
 				{
 					name: "frontend",
@@ -43,6 +44,7 @@ export function skupperPlainResources(): w8s.ClusterApplyResource[] {
 			namespace: "west",
 			name: "backend-listener",
 			labels: { app: "backend-listener", site: "west", role: "listener" },
+			nodeName: "west",
 			containers: [
 				{
 					name: "listener",
@@ -65,6 +67,7 @@ export function skupperPlainResources(): w8s.ClusterApplyResource[] {
 			namespace: "west",
 			name: "client",
 			labels: { app: "client", site: "west", role: "client" },
+			nodeName: "west",
 			containers: [
 				{
 					name: "client",
@@ -77,6 +80,7 @@ export function skupperPlainResources(): w8s.ClusterApplyResource[] {
 			namespace: "east",
 			name: "backend",
 			labels: { app: "backend", site: "east", role: "backend" },
+			nodeName: "east",
 			containers: [
 				{
 					name: "backend",
@@ -94,6 +98,7 @@ export function skupperPlainResources(): w8s.ClusterApplyResource[] {
 			namespace: "east",
 			name: "backend-connector",
 			labels: { app: "backend-connector", site: "east", role: "connector" },
+			nodeName: "east",
 			containers: [
 				{
 					name: "connector",
@@ -128,11 +133,13 @@ function deployment({
 	labels,
 	name,
 	namespace,
+	nodeName,
 }: {
 	containers: w8s.V1Container[];
 	labels: Record<string, string>;
 	name: string;
 	namespace: string;
+	nodeName?: string;
 }): w8s.ClusterApplyResource {
 	return {
 		apiVersion: "apps/v1",
@@ -155,6 +162,7 @@ function deployment({
 				},
 				spec: {
 					containers,
+					nodeName,
 				},
 			},
 		},
